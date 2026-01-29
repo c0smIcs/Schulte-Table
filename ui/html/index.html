@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Таблицы Шульте</title>
+		<link rel="stylesheet" href="/static/style.css" />
+	</head>
+	<body>
+		<div id="game-container">
+			<div class="info">
+				{{if eq .Status "Won!"}}
+				<div class="victory-panel">
+					<span class="final-time">Время: {{.FinalTime}}</span>
+					<a href="/restart" class="btn-restart">Играть снова ↻</a>
+				</div>
+
+				{{else}}
+				<div id="game-stats">
+					<span>Найдите число: <strong id="next-num">{{.NextNumber}}</strong></span>
+					<span id="timer">00:00</span>
+				</div>
+				{{end}}
+			</div>
+
+			<div class="grid">
+				{{range .Board}} {{range .}}
+				<div class="cell" data-val="{{.}}" onclick="sendClick(event, this)">
+					{{.}}
+				</div>
+				{{end}} {{end}}
+			</div>
+		</div>
+
+		<script src="/js/schulte.js"></script>
+	</body>
+</html>
