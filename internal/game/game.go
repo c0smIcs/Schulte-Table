@@ -1,6 +1,7 @@
 package game
 
 import (
+	"fmt"
 	"math/rand/v2"
 	"time"
 )
@@ -24,15 +25,34 @@ func NewGame() *Game {
 }
 
 func GenerateBoard() [][]int {
-	nums := rand.Perm(25)
-	for i := range nums {
-		nums[i]++
+	generateNums := rand.Perm(25)
+	for i := range generateNums {
+		generateNums[i]++
 	}
 
 	matrix := make([][]int, 5)
 	for i := 0; i < 5; i++ {
-		matrix[i] = nums[i*5 : (i+1)*5]
+		matrix[i] = generateNums[i*5 : (i+1)*5]
 	}
-	return matrix
 
+	return matrix
+}
+
+func FormatDuration(d time.Duration) string {
+	minutes := int(d.Minutes()) % 60
+	seconds := int(d.Seconds()) % 60
+	milliseconds := d.Milliseconds() % 1000 / 10
+
+	timeStr := fmt.Sprintf("%02d:%02d:%02d", minutes, seconds, milliseconds)
+
+	return timeStr
+}
+
+func (g *Game) Reset() {
+	matrix := GenerateBoard()
+
+	g.NextNumber = 1
+	g.Status = "Playing"
+	g.StartTime = time.Now()
+	g.Board = matrix
 }
