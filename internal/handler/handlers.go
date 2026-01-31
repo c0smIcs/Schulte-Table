@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/c0smIcs/SchulteTable/internal/game"
+	g "github.com/c0smIcs/SchulteTable/internal/game"
 )
 
 type ClickResponse struct {
@@ -20,12 +20,22 @@ type ClickResponse struct {
 
 var tpl = template.Must(template.ParseFiles("ui/html/index.html"))
 
+func getGameFromRequest(w http.ResponseWriter, r *http.Request) (*g.Game, error) {
+	cookie, err := r.Cookie("session_id")
+	if err != nil {
+		http.Error(w, "сессия не найдена", http.StatusForbidden)
+		return nil, err
+	}
+
+	return g.Store.GetGame(cookie.Value), nil
+}
+
 func IndexHandler(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session_id")
 	var sessionID string
 
 	if err != nil {
-		sessionID = game.GenerateSessionID()
+		sessionID = g.GenerateSessionID()
 
 		http.SetCookie(w, &http.Cookie{
 			Name:     "session_id",
@@ -37,23 +47,18 @@ func IndexHandler(w http.ResponseWriter, r *http.Request) {
 		sessionID = cookie.Value
 	}
 
-	game := game.Store.GetGame(sessionID)
+	g := g.Store.GetGame(sessionID)
 
-	tpl.Execute(w, game)
+	tpl.Execute(w, g)
 }
 
 func ClickHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	cookie, err := r.Cookie("session_id")
+	game, err := getGameFromRequest(w, r)
 	if err != nil {
-		http.Error(w, "сессия не найдена", http.StatusForbidden)
 		return
 	}
-
-	sessionID := cookie.Value
-
-	game := game.Store.GetGame(sessionID)
 
 	valStr := r.URL.Query().Get("val")
 
@@ -75,11 +80,7 @@ func ClickHandler(w http.ResponseWriter, r *http.Request) {
 				game.Status = "Won!"
 				cr.Status = "Won!"
 
-				duration := time.Since(game.StartTime)
-				minutes := int(duration.Minutes())
-				seconds := int(duration.Seconds())
-
-				cr.TimeTaken = fmt.Sprintf("%02d:%02d", minutes, seconds)
+				cr.TimeTaken = g.FormatDuration(time.Since(game.StartTime))
 			}
 		}
 
@@ -92,15 +93,10 @@ func TimerHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	cookie, err := r.Cookie("session_id")
+	game, err := getGameFromRequest(w, r)
 	if err != nil {
-		http.Error(w, "сессия не найдена", http.StatusForbidden)
 		return
 	}
-	
-	sessionID := cookie.Value
-
-	game := game.Store.GetGame(sessionID)
 
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -115,13 +111,7 @@ func TimerHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			duration := time.Since(game.StartTime)
-
-			minutes := int(duration.Minutes()) % 60
-			seconds := int(duration.Seconds()) % 60
-			milliseconds := duration.Milliseconds() / 100 % 10
-
-			timeStr := fmt.Sprintf("%02d:%02d:%02d", minutes, seconds, milliseconds)
+			timeStr := g.FormatDuration(time.Since(game.StartTime))
 
 			fmt.Fprintf(w, "data: %s\n\n", timeStr)
 			if flusher, ok := w.(http.Flusher); ok {
@@ -132,22 +122,12 @@ func TimerHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func RestartHandler(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("session_id")
+	foundGame, err := getGameFromRequest(w, r)
 	if err != nil {
-		http.Error(w, "сессия не найден", http.StatusForbidden)
 		return
 	}
 
-	sessionID := cookie.Value
-
-	foundGame := game.Store.GetGame(sessionID)
-
-	matrix := game.GenerateBoard()
-
-	foundGame.NextNumber = 1
-	foundGame.Status = "Playing"
-	foundGame.StartTime = time.Now()
-	foundGame.Board = matrix
+	foundGame.Reset()
 
 	http.Redirect(w, r, "/", http.StatusFound)
 }
