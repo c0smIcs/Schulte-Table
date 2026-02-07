@@ -4,13 +4,32 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/c0smIcs/SchulteTable/internal/game"
 	"github.com/c0smIcs/SchulteTable/internal/handler"
+	"github.com/c0smIcs/SchulteTable/internal/logger"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-    dsn := "host=localhost user=postgres password=1212 dbname=schulte port=5432 sslmode=disable"
+	logger.InitLogger()
+
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatalf("Ошибка при загрузки .env файла")
+	}
+
+	dsn := fmt.Sprintf(
+		"host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
+		os.Getenv("HOST"),
+		os.Getenv("USER"),
+		os.Getenv("PASSWORD"),
+		os.Getenv("DBNAME"),
+		os.Getenv("PORT"),
+		os.Getenv("SSLMODE"),
+	)
+
 	db, err := game.InitDB(dsn)
 	if err != nil {
 		log.Fatal("Не удалось подключиться к БД: ", err)
@@ -22,7 +41,6 @@ func main() {
 
 	fs := http.FileServer(http.Dir("./ui/static"))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
-
 	fsJS := http.FileServer(http.Dir("./ui/js"))
 	http.Handle("/js/", http.StripPrefix("/js/", fsJS))
 
@@ -31,6 +49,6 @@ func main() {
 	http.HandleFunc("/timer", app.TimerHandler)
 	http.HandleFunc("/restart", app.RestartHandler)
 
-	fmt.Println("Сервер запущен по адресу: http://localhost:8080")
+	logger.StartServer()
 	http.ListenAndServe(":8080", nil)
 }
