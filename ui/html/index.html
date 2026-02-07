@@ -4,7 +4,7 @@
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>Таблицы Шульте</title>
-		<link rel="stylesheet" href="/static/style.css"/>
+		<link rel="stylesheet" href="/static/style.css" />
 	</head>
 	<body>
 		<div id="game-container">
@@ -17,7 +17,9 @@
 
 				{{else}}
 				<div id="game-stats">
-					<span>Найдите число: <strong id="next-num">{{.NextNumber}}</strong></span>
+					<span
+						>Найдите число: <strong id="next-num">{{.NextNumber}}</strong></span
+					>
 					<span id="timer">00:00</span>
 				</div>
 				{{end}}
@@ -34,6 +36,11 @@
 			<div class="reset">
 				<a href="/restart" class="btn-reset">Сбросить</a>
 			</div>
+		</div>
+
+		<div id="new-record">
+			<div class="record-label">Ваш лучший результат</div>
+			<div class="record-value">{{.BestRecord}}</div>
 		</div>
 
 		<script src="/js/schulte.js"></script>
