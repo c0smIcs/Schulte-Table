@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	g "github.com/c0smIcs/SchulteTable/internal/game"
+	"gorm.io/gorm"
 )
 
 type ClickResponse struct {
@@ -16,27 +18,31 @@ type ClickResponse struct {
 	NextNumber int    `json:"next_number"`
 	Status     string `json:"status"`
 	TimeTaken  string `json:"time_taken"`
+	BestRecord string `json:"best_record"`
+}
+
+type App struct {
+	DB *gorm.DB
 }
 
 var tpl = template.Must(template.ParseFiles("ui/html/index.html"))
 
-func getGameFromRequest(w http.ResponseWriter, r *http.Request) (*g.Game, error) {
+func getGameFromRequest(w http.ResponseWriter, r *http.Request) (*g.Game, string, error) {
 	cookie, err := r.Cookie("session_id")
 	if err != nil {
 		http.Error(w, "сессия не найдена", http.StatusForbidden)
-		return nil, err
+		return nil, "", err
 	}
 
-	return g.Store.GetGame(cookie.Value), nil
+	return g.Store.GetGame(cookie.Value), cookie.Value, nil
 }
 
-func IndexHandler(w http.ResponseWriter, r *http.Request) {
+func (a *App) IndexHandler(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session_id")
 	var sessionID string
 
 	if err != nil {
 		sessionID = g.GenerateSessionID()
-
 		http.SetCookie(w, &http.Cookie{
 			Name:     "session_id",
 			Value:    sessionID,
@@ -47,15 +53,29 @@ func IndexHandler(w http.ResponseWriter, r *http.Request) {
 		sessionID = cookie.Value
 	}
 
-	g := g.Store.GetGame(sessionID)
+	currentGame := g.Store.GetGame(sessionID)
 
-	tpl.Execute(w, g)
+	bestTime, err := g.GetBestTime(r.Context(), a.DB, sessionID)
+	if err != nil {
+		fmt.Println("Ошибка получения рекорда:", err)
+		bestTime = "--:--"
+	}
+
+	data := struct {
+		*g.Game	
+		BestRecord string
+	}{
+		Game: currentGame,
+		BestRecord: bestTime,
+	}
+
+	tpl.Execute(w, data)
 }
 
-func ClickHandler(w http.ResponseWriter, r *http.Request) {
+func (a *App) ClickHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	game, err := getGameFromRequest(w, r)
+	game, sessionID, err := getGameFromRequest(w, r)
 	if err != nil {
 		return
 	}
@@ -81,6 +101,14 @@ func ClickHandler(w http.ResponseWriter, r *http.Request) {
 				cr.Status = "Won!"
 
 				cr.TimeTaken = g.FormatDuration(time.Since(game.StartTime))
+				duration := time.Since(game.StartTime)
+
+				go func() {
+					err := g.SaveRecord(context.Background(), a.DB, sessionID, duration)
+					if err != nil {
+						fmt.Printf("Ошибка при сохранении рекорда: %v\n", err)
+					}
+				}()
 			}
 		}
 
@@ -88,12 +116,12 @@ func ClickHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func TimerHandler(w http.ResponseWriter, r *http.Request) {
+func (a *App) TimerHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	game, err := getGameFromRequest(w, r)
+	game, _, err := getGameFromRequest(w, r)
 	if err != nil {
 		return
 	}
@@ -121,8 +149,8 @@ func TimerHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func RestartHandler(w http.ResponseWriter, r *http.Request) {
-	foundGame, err := getGameFromRequest(w, r)
+func (a *App) RestartHandler(w http.ResponseWriter, r *http.Request) {
+	foundGame, _, err := getGameFromRequest(w, r)
 	if err != nil {
 		return
 	}
