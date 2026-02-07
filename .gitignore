@@ -1,3 +1,4 @@
 .env
 go.*
 .vscode
+draft.txt
