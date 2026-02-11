@@ -13,15 +13,17 @@ type Game struct {
 	StartTime  time.Time
 }
 
-func NewGame() *Game {
+func NewGame(sessionID string) *Game {
 	matrix := GenerateBoard()
 
-	return &Game{
+	game := &Game{
 		Board:      matrix,
 		NextNumber: 1,
 		Status:     "Playing",
 		StartTime:  time.Now(),
 	}
+
+	return game
 }
 
 func GenerateBoard() [][]int {
