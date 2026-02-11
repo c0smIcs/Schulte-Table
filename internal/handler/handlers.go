@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
 	g "github.com/c0smIcs/SchulteTable/internal/game"
+	"github.com/c0smIcs/SchulteTable/internal/logger"
 	"gorm.io/gorm"
 )
 
@@ -43,6 +45,8 @@ func (a *App) IndexHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		sessionID = g.GenerateSessionID()
+		slog.Info("Создана новая сессия", "session_id", sessionID)
+
 		http.SetCookie(w, &http.Cookie{
 			Name:     "session_id",
 			Value:    sessionID,
@@ -57,15 +61,15 @@ func (a *App) IndexHandler(w http.ResponseWriter, r *http.Request) {
 
 	bestTime, err := g.GetBestTime(r.Context(), a.DB, sessionID)
 	if err != nil {
-		fmt.Println("Ошибка получения рекорда:", err)
+		slog.Error("Ошибка при получении рекорда", "session_id", sessionID, "err", err)
 		bestTime = "--:--"
 	}
 
 	data := struct {
-		*g.Game	
+		*g.Game
 		BestRecord string
 	}{
-		Game: currentGame,
+		Game:       currentGame,
 		BestRecord: bestTime,
 	}
 
@@ -103,10 +107,13 @@ func (a *App) ClickHandler(w http.ResponseWriter, r *http.Request) {
 				cr.TimeTaken = g.FormatDuration(time.Since(game.StartTime))
 				duration := time.Since(game.StartTime)
 
+				log := logger.WithSession(sessionID)
+				log.Info("Пользователь нашел все числа")
+
 				go func() {
 					err := g.SaveRecord(context.Background(), a.DB, sessionID, duration)
 					if err != nil {
-						fmt.Printf("Ошибка при сохранении рекорда: %v\n", err)
+						slog.Error("Ошибка при сохранении рекорда", "session_id", sessionID, "error", err)
 					}
 				}()
 			}
@@ -150,12 +157,15 @@ func (a *App) TimerHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) RestartHandler(w http.ResponseWriter, r *http.Request) {
-	foundGame, _, err := getGameFromRequest(w, r)
+	foundGame, sessionID, err := getGameFromRequest(w, r)
 	if err != nil {
 		return
 	}
 
 	foundGame.Reset()
+	
+	log := logger.WithSession(sessionID)
+	log.Info("Игрок сбросил игру")
 
 	http.Redirect(w, r, "/", http.StatusFound)
 }
