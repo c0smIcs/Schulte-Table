@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -17,7 +17,7 @@ func main() {
 
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatalf("Ошибка при загрузки .env файла")
+		slog.Error("Ошибка при загрузки .env файла", slog.Any("err", err))
 	}
 
 	dsn := fmt.Sprintf(
@@ -30,10 +30,20 @@ func main() {
 		os.Getenv("SSLMODE"),
 	)
 
+	dsnM := fmt.Sprintf(
+		"host=%s user=%s dbname=%s port=%s",
+		os.Getenv("HOST"),
+		os.Getenv("USER"),
+		os.Getenv("DBNAME"),
+		os.Getenv("PORT"),
+	)
+
 	db, err := game.InitDB(dsn)
 	if err != nil {
-		log.Fatal("Не удалось подключиться к БД: ", err)
+		logger.LoggerDBError(err, dsnM)
+		os.Exit(1)
 	}
+	logger.LoggerDBConnect(dsnM)
 
 	app := &handler.App{
 		DB: db,
@@ -49,6 +59,13 @@ func main() {
 	http.HandleFunc("/timer", app.TimerHandler)
 	http.HandleFunc("/restart", app.RestartHandler)
 
-	logger.StartServer()
-	http.ListenAndServe(":8080", nil)
+	port := os.Getenv("SERVER_PORT")
+	addr := ":" + port
+
+	slog.Info("Сервер запущен", slog.String("port", port),
+		slog.String("", "http://localhost:8080"))
+	
+	err = http.ListenAndServe(addr, nil); if err != nil {
+		slog.Error("Сервер аварийно остановился", slog.String("error", err.Error()))
+	}
 }
