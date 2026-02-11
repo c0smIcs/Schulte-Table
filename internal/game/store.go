@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"time"
@@ -12,6 +13,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
 type GameStore struct {
 	mu sync.RWMutex
 	ID map[string]*Game
@@ -38,7 +40,7 @@ func (s *GameStore) GetGame(sessionID string) *Game {
 
 	game, exists := s.ID[sessionID]
 	if !exists {
-		game = NewGame()
+		game = NewGame(sessionID)
 		s.ID[sessionID] = game
 	}
 
@@ -54,13 +56,15 @@ func (r *Record) BeforeCreate(tx *gorm.DB) (err error) {
 func InitDB(dsn string) (*gorm.DB, error) {
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to DB: %w", err)
+		return nil, fmt.Errorf("Ошибка при открытии БД: %w", err)
 	}
+	slog.Info("БД успешно подключена")
 
 	// Автомиграция создает таблицу автоматически
 	if err := db.AutoMigrate(&Record{}); err != nil {
 		return nil, fmt.Errorf("migration failed %w", err)
 	}
+	slog.Info("AutoMigrate успешно прошла")
 
 	return db, nil
 }
@@ -87,10 +91,9 @@ func GetBestTime(ctx context.Context, db *gorm.DB, sessionID string) (string, er
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "--:--", nil
 		}
-		return "", nil
+		return "", err
 	}
 
 	d := time.Duration(rec.TimeTaken * float64(time.Second))
 	return FormatDuration(d), err
 }
-
