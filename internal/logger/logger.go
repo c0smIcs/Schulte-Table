@@ -17,7 +17,7 @@ func InitLogger() {
 		},
 	}
 
-	handler := slog.NewJSONHandler(os.Stdout, opts)
+	handler := slog.NewJSONHandler(os.Stderr, opts)
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
 }
@@ -42,4 +42,3 @@ func LoggerDBConnect(dsn string) {
 func WithSession(sessionID string) *slog.Logger {
 	return slog.With("session_id", sessionID)
 }
-

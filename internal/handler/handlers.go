@@ -8,11 +8,12 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	g "github.com/c0smIcs/SchulteTable/internal/game"
 	"github.com/c0smIcs/SchulteTable/internal/logger"
-	"gorm.io/gorm"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type ClickResponse struct {
@@ -24,7 +25,8 @@ type ClickResponse struct {
 }
 
 type App struct {
-	DB *gorm.DB
+	DB *pgxpool.Pool   `json:"db"`
+	WG *sync.WaitGroup `json:"wg"`
 }
 
 var tpl = template.Must(template.ParseFiles("ui/html/index.html"))
@@ -36,7 +38,13 @@ func getGameFromRequest(w http.ResponseWriter, r *http.Request) (*g.Game, string
 		return nil, "", err
 	}
 
-	return g.Store.GetGame(cookie.Value), cookie.Value, nil
+	game := g.Store.GetGame(cookie.Value)
+	if game == nil {
+		http.Error(w, "не удалось найти игру (сессию)", http.StatusNotFound)
+		return nil, "", fmt.Errorf("game not found for session: %s", cookie.Value)
+	}
+
+	return game, cookie.Value, nil
 }
 
 func (a *App) IndexHandler(w http.ResponseWriter, r *http.Request) {
@@ -58,8 +66,14 @@ func (a *App) IndexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	currentGame := g.Store.GetGame(sessionID)
+	if currentGame == nil {
+		currentGame = g.NewGame(sessionID)
 
-	bestTime, err := g.GetBestTime(r.Context(), a.DB, sessionID)
+		g.Store.SaveGame(sessionID, currentGame)
+	}
+
+	// bestTime, err := g.GetBestTime(r.Context(), a.DB, sessionID)
+	bestTime, err := g.Store.GetBestTime(r.Context(), sessionID)
 	if err != nil {
 		slog.Error("Ошибка при получении рекорда", "session_id", sessionID, "err", err)
 		bestTime = "--:--"
@@ -73,7 +87,10 @@ func (a *App) IndexHandler(w http.ResponseWriter, r *http.Request) {
 		BestRecord: bestTime,
 	}
 
-	tpl.Execute(w, data)
+	err = tpl.Execute(w, data)
+	if err != nil {
+		slog.Error("ошибка", "err", err)
+	}
 }
 
 func (a *App) ClickHandler(w http.ResponseWriter, r *http.Request) {
@@ -85,13 +102,22 @@ func (a *App) ClickHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	valStr := r.URL.Query().Get("val")
-
 	val, err := strconv.Atoi(valStr)
+	slog.Info("клик получен", "val", val)
+	
 	if err == nil {
 		cr := ClickResponse{
 			IsCorrect:  false,
 			NextNumber: game.NextNumber,
 			Status:     game.Status,
+		}
+
+		game.RWmu.Lock()
+		if game.Status != "Playing" {
+			cr.Status = game.Status
+			game.RWmu.Unlock()
+			json.NewEncoder(w).Encode(cr)
+			return
 		}
 
 		if val == game.NextNumber {
@@ -110,16 +136,29 @@ func (a *App) ClickHandler(w http.ResponseWriter, r *http.Request) {
 				log := logger.WithSession(sessionID)
 				log.Info("Пользователь нашел все числа")
 
+				a.WG.Add(1)
 				go func() {
-					err := g.SaveRecord(context.Background(), a.DB, sessionID, duration)
+					defer a.WG.Done()
+
+					ctx := context.Background()
+					timeout := 3 * time.Second
+					ctx, cancel := context.WithTimeout(ctx, timeout)
+					defer cancel()
+
+					// err := g.SaveRecord(ctx, a.DB, sessionID, duration)
+					err := g.Store.SaveRecord(ctx, sessionID, duration)
 					if err != nil {
 						slog.Error("Ошибка при сохранении рекорда", "session_id", sessionID, "error", err)
 					}
 				}()
 			}
 		}
+		cr.NextNumber = game.NextNumber
+		game.RWmu.Unlock()
 
-		json.NewEncoder(w).Encode(cr)
+		if err := json.NewEncoder(w).Encode(cr); err != nil {
+			http.Error(w, "не удалось закодировать", http.StatusBadRequest)
+		}
 	}
 }
 
@@ -136,22 +175,40 @@ func (a *App) TimerHandler(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
+	limitTimer := time.NewTimer(3 * time.Minute)
+	defer limitTimer.Stop()
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
 
 		case <-ticker.C:
-			if game.Status == "Won!" {
+			game.RWmu.RLock()
+			status := game.Status
+			startTime := game.StartTime
+			game.RWmu.RUnlock()
+
+			if status != "Playing" {
 				return
 			}
 
-			timeStr := g.FormatDuration(time.Since(game.StartTime))
-
+			timeStr := g.FormatDuration(time.Since(startTime))
 			fmt.Fprintf(w, "data: %s\n\n", timeStr)
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
 			}
+
+		case <-limitTimer.C:
+			game.RWmu.Lock()
+			game.Status = "Timeout"
+			game.RWmu.Unlock()
+
+			fmt.Fprintf(w, "data: Timeout\n\n")
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			return
 		}
 	}
 }
@@ -163,7 +220,7 @@ func (a *App) RestartHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	foundGame.Reset()
-	
+
 	log := logger.WithSession(sessionID)
 	log.Info("Игрок сбросил игру")
 
