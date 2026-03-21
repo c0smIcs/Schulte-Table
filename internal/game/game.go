@@ -3,6 +3,7 @@ package game
 import (
 	"fmt"
 	"math/rand/v2"
+	"sync"
 	"time"
 )
 
@@ -11,6 +12,7 @@ type Game struct {
 	NextNumber int
 	Status     string
 	StartTime  time.Time
+	RWmu       sync.RWMutex
 }
 
 func NewGame(sessionID string) *Game {
@@ -41,11 +43,15 @@ func GenerateBoard() [][]int {
 }
 
 func FormatDuration(d time.Duration) string {
+	if d < 0 {
+		d = d.Abs()
+	}
+
 	minutes := int(d.Minutes()) % 60
 	seconds := int(d.Seconds()) % 60
-	milliseconds := d.Milliseconds() % 1000 / 10
+	milliseconds := d.Milliseconds() % 1000
 
-	timeStr := fmt.Sprintf("%02d:%02d:%02d", minutes, seconds, milliseconds)
+	timeStr := fmt.Sprintf("%02d:%02d:%03d", minutes, seconds, milliseconds)
 
 	return timeStr
 }
@@ -53,6 +59,8 @@ func FormatDuration(d time.Duration) string {
 func (g *Game) Reset() {
 	matrix := GenerateBoard()
 
+	g.RWmu.Lock()
+	defer g.RWmu.Unlock()
 	g.NextNumber = 1
 	g.Status = "Playing"
 	g.StartTime = time.Now()

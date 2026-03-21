@@ -1,18 +1,30 @@
 package game
 
+/*
 import (
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
-
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	// "context"
+	// "errors"
+	// "fmt"
+	// "log/slog"
+	// "sync"
+	// "time"
+	// "github.com/google/uuid"
+	// "gorm.io/driver/postgres"
+	// "gorm.io/gorm"
 )
+
+// docker run --name=schulte-table -e POSTGRES_PASSWORD='1212' -p 5434:5432 -d --rm postgres
+// migrate -path ./migrations -database 'postgres://postgres:1212@localhost:5434/postgres?sslmode=disable' up
 
 type GameStore struct {
 	mu sync.RWMutex
@@ -60,7 +72,6 @@ func InitDB(dsn string) (*gorm.DB, error) {
 	}
 	slog.Info("БД успешно подключена")
 
-	// Автомиграция создает таблицу автоматически
 	if err := db.AutoMigrate(&Record{}); err != nil {
 		return nil, fmt.Errorf("migration failed %w", err)
 	}
@@ -81,7 +92,6 @@ func SaveRecord(ctx context.Context, db *gorm.DB, sessionID string, duration tim
 
 func GetBestTime(ctx context.Context, db *gorm.DB, sessionID string) (string, error) {
 	var rec Record
-	// Ищем запись с минимальным TimeTaken для этого sessionID
 	err := db.WithContext(ctx).
 		Where("session_id = ?", sessionID).
 		Order("time_taken ASC").
@@ -97,3 +107,4 @@ func GetBestTime(ctx context.Context, db *gorm.DB, sessionID string) (string, er
 	d := time.Duration(rec.TimeTaken * float64(time.Second))
 	return FormatDuration(d), err
 }
+*/
