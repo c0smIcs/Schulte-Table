@@ -15,6 +15,12 @@
 					<a href="/restart" class="btn-restart">Играть снова ↻</a>
 				</div>
 
+				{{else if eq .Status "Timeout"}}
+				<div class="timeout-panek">
+					<span class="timeout-text">⏰ Время вышло</span>
+					<a href="/restart" class="btn-timeout">Играть снова ↻</a>
+				</div>
+
 				{{else}}
 				<div id="game-stats">
 					<span>Найдите число: <strong id="next-num">{{.NextNumber}}</strong></span>
