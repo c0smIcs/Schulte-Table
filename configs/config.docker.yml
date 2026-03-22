@@ -1,0 +1,13 @@
+# Конфигурация для запуска через Docker Compose.
+# В контейнере приложение подключается к сервису БД по имени сервиса (db), не через localhost.
+# Локальный configs/config.yml оставь для go run / make run на машине.
+
+db:
+  host: "db"
+  user: "postgres"
+  password: "1212"
+  dbname: "schulte"
+  port: "5432"
+  sslmode: "disable"
+
+serverport: "8080"

@@ -1,0 +1,63 @@
+# =============================================================================
+# Schulte Table — Docker Compose
+# =============================================================================
+#
+# Поднимает PostgreSQL и веб-приложение одной командой.
+#
+# Быстрый старт:
+#   docker compose up --build
+#   Открой в браузере: http://localhost:8080
+#
+# Остановка:
+#   Ctrl+C  или  docker compose down
+#
+# Данные Postgres сохраняются в именованном томе postgres_data.
+# Схема БД создаётся скриптом из ./migrations при первом запуске пустого тома.
+#
+# Конфиг приложения в контейнере подменяется на configs/config.docker.yml
+# (хост БД = имя сервиса db, порт 5432 внутри сети compose).
+#
+# Доступ к Postgres с хоста (опционально): localhost:5433
+#   psql "postgres://postgres:1212@localhost:5433/schulte?sslmode=disable"
+#
+# =============================================================================
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: schulte-table_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "1212"
+      POSTGRES_DB: schulte
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Выполняется только при первой инициализации пустого тома данных
+      - ./migrations/000001_init.up.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d schulte"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: schulte-table_app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Подмена конфига: внутри образа путь к конфигу — /root/configs/config.yml (см. Dockerfile)
+      - ./configs/config.docker.yml:/root/configs/config.yml:ro
+
+volumes:
+  postgres_data:

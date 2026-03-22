@@ -17,10 +17,33 @@
 ### Backend
 *   **Language:** Go (Golang)
 *   **Database:** PostgreSQL
-*   **ORM:** GORM (для работы с БД и миграций)
+*   **Драйвер БД:** `pgx` / пул соединений
 *   **Architecture:** REST API + SSE (EventSource)
-*   **Features:** Dependency Injection, Graceful handling, Goroutines for async tasks.
+*   **Features:** Graceful shutdown, горутины для фоновых задач.
 
 ### Frontend
 *   **HTML / CSS:** Flexbox верстка, CSS Variables.
 *   **JavaScript:** Vanilla JS (ES6+), Fetch API, DOM Manipulation.
+
+## 🐳 Запуск через Docker Compose
+
+Поднимает **PostgreSQL** и **приложение** одной командой.
+
+```bash
+make docker
+# или
+docker compose up --build
+```
+
+Открой в браузере: **http://localhost:8080**
+
+- Конфиг для контейнера: `configs/config.docker.yml` (монтируется поверх `configs/config.yml` в образе).
+- Локальный запуск без Docker по-прежнему использует `configs/config.yml` (`host: localhost`, порт `5433` и т.д.).
+- Данные Postgres хранятся в томе `postgres_data`. Скрипт из `migrations/000001_init.up.sql` выполняется при **первой** инициализации пустого тома.
+- Остановка: `Ctrl+C` или `docker compose down`.
+
+Остановка с удалением тома (если нужно «сбросить» БД с нуля):
+
+```bash
+docker compose down -v
+```
