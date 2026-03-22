@@ -2,5 +2,6 @@
 go.*
 .vscode
 draft.txt
-schulte
+# только бинарник в корне, не пакет cmd/schulte
+/schulte
 .bin

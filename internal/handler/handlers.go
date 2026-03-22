@@ -31,16 +31,33 @@ type App struct {
 
 var tpl = template.Must(template.ParseFiles("ui/html/index.html"))
 
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
+
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+
+	w.WriteHeader(status)
+
+	errorResponse := ErrorResponse{Error: msg}
+
+	if err := json.NewEncoder(w).Encode(errorResponse); err != nil {
+		slog.Error("не удалось закодировать ошибку", "error", err)
+		return
+	}
+}
+
 func getGameFromRequest(w http.ResponseWriter, r *http.Request) (*g.Game, string, error) {
 	cookie, err := r.Cookie("session_id")
 	if err != nil {
-		http.Error(w, "сессия не найдена", http.StatusForbidden)
+		writeJSONError(w, http.StatusForbidden, "сессия не найдена")
 		return nil, "", err
 	}
 
 	game := g.Store.GetGame(cookie.Value)
 	if game == nil {
-		http.Error(w, "не удалось найти игру (сессию)", http.StatusNotFound)
+		writeJSONError(w, http.StatusNotFound, "не удалось найти игру")
 		return nil, "", fmt.Errorf("game not found for session: %s", cookie.Value)
 	}
 
@@ -103,63 +120,69 @@ func (a *App) ClickHandler(w http.ResponseWriter, r *http.Request) {
 
 	valStr := r.URL.Query().Get("val")
 	val, err := strconv.Atoi(valStr)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "неверный формат числа")
+		return
+	}
+
 	slog.Info("клик получен", "val", val)
-	
-	if err == nil {
-		cr := ClickResponse{
-			IsCorrect:  false,
-			NextNumber: game.NextNumber,
-			Status:     game.Status,
-		}
 
-		game.RWmu.Lock()
-		if game.Status != "Playing" {
-			cr.Status = game.Status
-			game.RWmu.Unlock()
-			json.NewEncoder(w).Encode(cr)
-			return
-		}
+	// if err == nil {
+	cr := ClickResponse{
+		IsCorrect:  false,
+		NextNumber: game.NextNumber,
+		Status:     game.Status,
+	}
 
-		if val == game.NextNumber {
-			game.NextNumber++
-
-			cr.IsCorrect = true
-			cr.NextNumber = game.NextNumber
-
-			if game.NextNumber == 26 {
-				game.Status = "Won!"
-				cr.Status = "Won!"
-
-				cr.TimeTaken = g.FormatDuration(time.Since(game.StartTime))
-				duration := time.Since(game.StartTime)
-
-				log := logger.WithSession(sessionID)
-				log.Info("Пользователь нашел все числа")
-
-				a.WG.Add(1)
-				go func() {
-					defer a.WG.Done()
-
-					ctx := context.Background()
-					timeout := 3 * time.Second
-					ctx, cancel := context.WithTimeout(ctx, timeout)
-					defer cancel()
-
-					// err := g.SaveRecord(ctx, a.DB, sessionID, duration)
-					err := g.Store.SaveRecord(ctx, sessionID, duration)
-					if err != nil {
-						slog.Error("Ошибка при сохранении рекорда", "session_id", sessionID, "error", err)
-					}
-				}()
-			}
-		}
-		cr.NextNumber = game.NextNumber
+	game.RWmu.Lock()
+	if game.Status != "Playing" {
+		cr.Status = game.Status
 		game.RWmu.Unlock()
+		json.NewEncoder(w).Encode(cr)
+		return
+	}
 
-		if err := json.NewEncoder(w).Encode(cr); err != nil {
-			http.Error(w, "не удалось закодировать", http.StatusBadRequest)
+	if val == game.NextNumber {
+		game.NextNumber++
+
+		cr.IsCorrect = true
+		cr.NextNumber = game.NextNumber
+
+		if game.NextNumber == 26 {
+			game.Status = "Won!"
+			cr.Status = "Won!"
+
+			cr.TimeTaken = g.FormatDuration(time.Since(game.StartTime))
+			duration := time.Since(game.StartTime)
+
+			log := logger.WithSession(sessionID)
+			log.Info("Пользователь нашел все числа")
+
+			a.WG.Add(1)
+			go func() {
+				defer a.WG.Done()
+
+				ctx := context.Background()
+				timeout := 3 * time.Second
+				ctx, cancel := context.WithTimeout(ctx, timeout)
+				defer cancel()
+
+				err := g.Store.SaveRecord(ctx, sessionID, duration)
+				if err != nil {
+					slog.Error("Ошибка при сохранении рекорда", "session_id", sessionID, "error", err)
+				}
+			}()
 		}
 	}
+	cr.NextNumber = game.NextNumber
+	game.RWmu.Unlock()
+
+	if err := json.NewEncoder(w).Encode(cr); err != nil {
+		slog.Error("не удалось закодировать", "error", err)
+		writeJSONError(w, http.StatusInternalServerError, "внутренняя ошибка сервера")
+		return
+	}
+	// }
 }
 
 func (a *App) TimerHandler(w http.ResponseWriter, r *http.Request) {
